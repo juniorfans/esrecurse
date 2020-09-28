@@ -1,26 +1,3 @@
-/*
-  Copyright (C) 2014 Yusuke Suzuki <utatane.tea@gmail.com>
-
-  Redistribution and use in source and binary forms, with or without
-  modification, are permitted provided that the following conditions are met:
-
-    * Redistributions of source code must retain the above copyright
-      notice, this list of conditions and the following disclaimer.
-    * Redistributions in binary form must reproduce the above copyright
-      notice, this list of conditions and the following disclaimer in the
-      documentation and/or other materials provided with the distribution.
-
-  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-  ARE DISCLAIMED. IN NO EVENT SHALL <COPYRIGHT HOLDER> BE LIABLE FOR ANY
-  DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-  (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-  LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
-  ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
-  THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
 (function () {
     'use strict';
 
@@ -55,11 +32,98 @@
      * When you need to call default visiting operation inside custom visiting
      * operation, you can use it with `this.visitChildren(node)`.
      */
+	 //这个函数会被外转的库所引用, 故也需要实现一个 "非递归的版本"
     Visitor.prototype.visitChildren = function (node) {
-        var type, children, i, iz, j, jz, child;
-
         if (node == null) {
             return;
+        }
+		let stack = [node];
+		while(stack.length > 0){
+			let cur = stack.pop();
+			if(null == cur) continue;
+			let type = cur.type || estraverse.Syntax.Property;
+			//如果对 type 能处理, 就直接处理.
+			//visitChildren 的语义是: 仅对子节点进行处理, 忽略自身.
+			if (this.__visitor[type] && cur!=node) {
+				//fs.writeFileSync('./3.txt', type+'\n', {flag: 'a'});
+				this.__visitor[type].call(this, cur);
+			}
+			else{
+				
+				let children = this.getChildren(cur);
+				for(let c of children){
+					
+					stack.push(c);
+				}
+			}
+		}
+    };
+
+	//visit3 与 visit2 待价.
+	Visitor.prototype.visit3 = function(inNode){
+		
+		if (inNode == null) {
+			
+            return;
+        }
+		let stack = [inNode];
+		while(stack.length > 0){
+			let node = stack.pop();
+			if(null == node) continue;
+			let type = node.type || estraverse.Syntax.Property;
+			//如果对 type 能处理, 就直接处理.
+			if (this.__visitor[type]) {
+				//fs.writeFileSync('./3.txt', type+'\n', {flag: 'a'});
+				this.__visitor[type].call(this, node);
+			}
+			else{
+				
+				let type, children, i, iz, j, jz, child;
+
+				type = node.type || estraverse.Syntax.Property;
+
+				children = this.__childVisitorKeys[type];
+				if (!children) {
+					if (this.__fallback) {
+						children = this.__fallback(node);
+					} else {
+						throw new Error('Unknown node type ' + type + '.');
+					}
+				}
+
+				
+				for (i = 0, iz = children.length; i < iz; ++i) 
+				//for (i = children.length-1; i>=0; --i) 	//逆序加入
+				{
+					child = node[children[i]];
+					if (child) {
+						if (Array.isArray(child)) {
+							//for (j = 0, jz = child.length; j < jz; ++j) 
+							for(j=child.length-1; j>=0; --j)	//逆序加入
+							{
+								if (child[j]) {
+									if (isNode(child[j]) || isProperty(type, children[i])) {
+										stack.push(child[j]);
+										
+									}
+								}
+							}
+						} else if (isNode(child)) {
+							
+							stack.push(child);
+						}
+					}
+				}
+			}
+		}
+	}
+	
+	
+	Visitor.prototype.getChildren = function(node){
+		var type, children, i, iz, j, jz, child;
+
+        if (node == null) {
+            return [];
         }
 
         type = node.type || estraverse.Syntax.Property;
@@ -73,39 +137,56 @@
             }
         }
 
-        for (i = 0, iz = children.length; i < iz; ++i) {
+		let retChildren = [];
+        //for (i = 0, iz = children.length; i < iz; ++i) 
+		for (i = children.length-1;i>=0; --i) 
+		{
             child = node[children[i]];
             if (child) {
                 if (Array.isArray(child)) {
-                    for (j = 0, jz = child.length; j < jz; ++j) {
+                    //for (j = 0, jz = child.length; j < jz; ++j) 
+					for(j=child.length-1; j>=0; --j)	//逆序加入
+					{
                         if (child[j]) {
                             if (isNode(child[j]) || isProperty(type, children[i])) {
-                                this.visit(child[j]);
+								retChildren.push(child[j]);
                             }
                         }
                     }
                 } else if (isNode(child)) {
-                    this.visit(child);
+					retChildren.push(child);
                 }
             }
         }
-    };
-
-    /* Dispatching node. */
-    Visitor.prototype.visit = function (node) {
-        var type;
-
+		return retChildren;
+	}
+	
+	const fs = require('fs')
+	/* Dispatching node. 非递归的模式 */
+    Visitor.prototype.visit2 = function (node) {
         if (node == null) {
             return;
         }
-
-        type = node.type || estraverse.Syntax.Property;
-        if (this.__visitor[type]) {
-            this.__visitor[type].call(this, node);
-            return;
-        }
-        this.visitChildren(node);
+		let stack = [node];
+		while(stack.length > 0){
+			let cur = stack.pop();
+			if(null == cur) continue;
+			let type = cur.type || estraverse.Syntax.Property;
+			//如果对 type 能处理, 就直接处理.
+			if (this.__visitor[type]) {
+				//fs.writeFileSync('./2.txt', type+','+cur.name+'\n', {flag: 'a'});
+				this.__visitor[type].call(this, cur);
+			}
+			else{
+				let children = this.getChildren(cur);
+				for(let c of children){
+					stack.push(c);
+				}
+			}
+		}
     };
+	
+	Visitor.prototype.visit = Visitor.prototype.visit3;
 
     exports.version = require('./package.json').version;
     exports.Visitor = Visitor;
@@ -114,4 +195,3 @@
         v.visit(node);
     };
 }());
-/* vim: set sw=4 ts=4 et tw=80 : */
